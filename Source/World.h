@@ -28,6 +28,7 @@ private:
 	static ShaderProgram shaderProgram1;
 	unsigned m_VAO = 0;
 	unsigned m_VBO = 0;
+	unsigned m_offsetVBO = 0;
 	unsigned m_EBO = 0;
 
 	glm::mat4 m_modelMat = glm::mat4(1.0f);

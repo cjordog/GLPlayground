@@ -37,6 +37,7 @@ bool World::Init()
 	glEnable(GL_CULL_FACE);
 
 	glGenBuffers(1, &m_VBO);
+	glGenBuffers(1, &m_offsetVBO);
 	glGenBuffers(1, &m_EBO);
 	glGenVertexArrays(1, &m_VAO);
 
@@ -47,11 +48,23 @@ bool World::Init()
 	glVertexAttribBinding(0, vertexBindingPoint);
 	glEnableVertexAttribArray(0);
 
+	glVertexAttribFormat(1, 3, GL_FLOAT, GL_FALSE, 0);
+	glVertexAttribBinding(1, 1);
+	glEnableVertexAttribArray(1);
+	glVertexAttribDivisor(1, 1);
+
 	glBindBuffer(GL_ARRAY_BUFFER, m_VBO);
 	glBufferData(GL_ARRAY_BUFFER, 72 * sizeof(float), (float*)Mesh::GetCubeVertices(), GL_STATIC_DRAW);
 
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_EBO);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, 36 * sizeof(uint8_t), Mesh::GetCubeIndices(), GL_STATIC_DRAW);
+
+	std::vector<glm::vec3> offsets;
+	offsets.emplace_back(1, 0, 1);
+	offsets.emplace_back(-1, 0, -1);
+
+	glBindBuffer(GL_ARRAY_BUFFER, m_offsetVBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * offsets.size(), (float*)offsets.data(), GL_STATIC_DRAW);
 
 	return true;
 }
@@ -76,12 +89,13 @@ void World::Render()
 	shaderProgram1.Use();
 	glBindVertexArray(m_VAO);
 	glBindVertexBuffer(0, m_VBO, 0, sizeof(GX::VertexP));
+	glBindVertexBuffer(1, m_offsetVBO, 0, sizeof(glm::vec3));
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_EBO);
 
 	glUniformMatrix4fv(0, 1, GL_FALSE, &glm::mat4(m_camera.GetViewMatrix() * m_modelMat)[0][0]);
 	glUniformMatrix4fv(1, 1, GL_FALSE, &m_camera.GetProjMatrix()[0][0]);
 
-	glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_BYTE, 0);
+	glDrawElementsInstanced(GL_TRIANGLES, 36, GL_UNSIGNED_BYTE, 0, 2);
 
 #ifdef IMGUI_ENABLED
 	ImGuiRenderStart();
