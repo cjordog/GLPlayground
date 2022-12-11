@@ -24,6 +24,7 @@
 #endif
 
 ShaderProgram World::shaderProgram1;
+ShaderProgram World::screenShader;
 
 World::World()
 	: m_camera(glm::vec3(0, 0, -10), 0, 90.0f)
@@ -31,10 +32,53 @@ World::World()
 
 }
 
+World::~World()
+{
+	//glDeleteFramebuffers()
+}
+
 bool World::Init()
 {
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_CULL_FACE);
+
+	glGenFramebuffers(1, &m_fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
+
+	glGenTextures(1, &m_screenTexture);
+	glBindTexture(GL_TEXTURE_2D, m_screenTexture);
+
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1600, 900, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_screenTexture, 0);
+
+	//unsigned int texture2;
+	//glGenTextures(1, &texture2);
+	//glBindTexture(GL_TEXTURE_2D, texture2);
+	//glTexImage2D(
+	//	GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, 800, 600, 0,
+	//	GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL
+	//);
+
+	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+	//glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, texture2, 0);
+
+	unsigned int rbo;
+	glGenRenderbuffers(1, &rbo);
+	glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, 1600, 900);
+	glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
+
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+		std::cout << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << std::endl;
+	//glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 	glGenBuffers(1, &m_VBO);
 	glGenBuffers(1, &m_offsetVBO);
@@ -60,8 +104,13 @@ bool World::Init()
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, 36 * sizeof(uint8_t), Mesh::GetCubeIndices(), GL_STATIC_DRAW);
 
 	std::vector<glm::vec3> offsets;
-	offsets.emplace_back(1, 0, 1);
-	offsets.emplace_back(-1, 0, -1);
+	for (int i = -50; i < 50; i++)
+	{
+		for (int j = 0; j < 100; j++)
+		{
+			offsets.emplace_back(i * 2, 0, j * 2);
+		}
+	}
 
 	glBindBuffer(GL_ARRAY_BUFFER, m_offsetVBO);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * offsets.size(), (float*)offsets.data(), GL_STATIC_DRAW);
@@ -79,12 +128,20 @@ void World::Render()
 {
 	ZoneScoped;
 
-	glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
 #ifdef IMGUI_ENABLED
 	ImGuiBeginRender();
 #endif
+	//// first pass
+	//glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+	//glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+	//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // we're not using the stencil buffer now
+	//glEnable(GL_DEPTH_TEST);
+	//DrawScene();
+
+
+	glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
+	glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	shaderProgram1.Use();
 	glBindVertexArray(m_VAO);
@@ -95,7 +152,18 @@ void World::Render()
 	glUniformMatrix4fv(0, 1, GL_FALSE, &glm::mat4(m_camera.GetViewMatrix() * m_modelMat)[0][0]);
 	glUniformMatrix4fv(1, 1, GL_FALSE, &m_camera.GetProjMatrix()[0][0]);
 
-	glDrawElementsInstanced(GL_TRIANGLES, 36, GL_UNSIGNED_BYTE, 0, 2);
+	glDrawElementsInstanced(GL_TRIANGLES, 36, GL_UNSIGNED_BYTE, 0, 10000);
+
+	// second pass
+	glBindFramebuffer(GL_FRAMEBUFFER, 0); // back to default
+	glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	screenShader.Use();
+	glBindVertexArray(quadVAO);
+	glDisable(GL_DEPTH_TEST);
+	glBindTexture(GL_TEXTURE_2D, textureColorbuffer);
+	glDrawArrays(GL_TRIANGLES, 0, 6);
 
 #ifdef IMGUI_ENABLED
 	ImGuiRenderStart();
