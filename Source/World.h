@@ -37,9 +37,14 @@ private:
 	unsigned m_screenVBO = 0;
 
 	unsigned m_fbo = 0;
+	unsigned m_depthMapFBO = 0;
+
 	unsigned m_screenTexture = 0;
+	unsigned m_shadowTex = 0;
 
 	glm::mat4 m_modelMat = glm::mat4(1.0f);
+	glm::mat4 m_lightViewMat = glm::mat4(1.0f);
+	glm::mat4 m_lightProjMat = glm::mat4(1.0f);
 
 	Camera m_camera;
 

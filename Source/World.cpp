@@ -37,6 +37,17 @@ World::~World()
 	//glDeleteFramebuffers()
 }
 
+float quadVertices[] = {
+	// positions   // texCoords
+	-1.0f,  1.0f,  0.0f, 1.0f,
+	-1.0f, -1.0f,  0.0f, 0.0f,
+	 1.0f, -1.0f,  1.0f, 0.0f,
+
+	-1.0f,  1.0f,  0.0f, 1.0f,
+	 1.0f, -1.0f,  1.0f, 0.0f,
+	 1.0f,  1.0f,  1.0f, 1.0f
+};
+
 bool World::Init()
 {
 	glEnable(GL_DEPTH_TEST);
@@ -87,9 +98,8 @@ bool World::Init()
 
 	glBindVertexArray(m_VAO);
 
-	constexpr int vertexBindingPoint = 0;
 	glVertexAttribFormat(0, 3, GL_FLOAT, GL_FALSE, 0);
-	glVertexAttribBinding(0, vertexBindingPoint);
+	glVertexAttribBinding(0, 0);
 	glEnableVertexAttribArray(0);
 
 	glVertexAttribFormat(1, 3, GL_FLOAT, GL_FALSE, 0);
@@ -115,12 +125,57 @@ bool World::Init()
 	glBindBuffer(GL_ARRAY_BUFFER, m_offsetVBO);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * offsets.size(), (float*)offsets.data(), GL_STATIC_DRAW);
 
+	glGenVertexArrays(1, &m_screenVAO);
+	glBindVertexArray(m_screenVAO);
+
+	glGenBuffers(1, &m_screenVBO);
+	glBindBuffer(GL_ARRAY_BUFFER, m_screenVBO);
+	glBufferData(GL_ARRAY_BUFFER, 4 * 6 * sizeof(float), quadVertices, GL_STATIC_DRAW);
+
+	glVertexAttribFormat(0, 2, GL_FLOAT, GL_FALSE, 0);
+	glVertexAttribBinding(0, 0);
+	glEnableVertexAttribArray(0);
+
+	glVertexAttribFormat(1, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float));
+	glVertexAttribBinding(1, 0);
+	glEnableVertexAttribArray(1);
+
+	// shadows
+	glGenFramebuffers(1, &m_depthMapFBO);
+	
+	constexpr unsigned SHADOW_MAP_SIZE = 1024;
+	glGenTextures(1, &m_shadowTex);
+	glBindTexture(GL_TEXTURE_2D, m_shadowTex);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+	// just depth buffer. no color
+	glBindFramebuffer(GL_FRAMEBUFFER, m_depthMapFBO);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_shadowTex, 0);
+	glDrawBuffer(GL_NONE);
+	glReadBuffer(GL_NONE);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	float near_plane = 1.0f, far_plane = 20.0f;
+	m_lightProjMat = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, near_plane, far_plane);
+
+	m_lightViewMat = glm::lookAt(glm::vec3(0, 10, 0),
+		glm::vec3(10.0f, 0.0f, 20.0f),
+		glm::vec3(0.0f, 1.0f, 0.0f));
+	//m_lightViewMat = glm::lookAt(glm::vec3(-2.0f, 4.0f, -1.0f),
+	//	glm::vec3(0.0f, 0.0f, 0.0f),
+	//	glm::vec3(0.0f, 1.0f, 0.0f));
+
 	return true;
 }
 
 bool World::InitShared()
 {
 	shaderProgram1 = ShaderProgram("test1.vs.glsl", "test1.fs.glsl");
+	screenShader = ShaderProgram("FullscreenTex.vs.glsl", "FullscreenTex.fs.glsl");
 	return true;
 }
 
@@ -131,23 +186,27 @@ void World::Render()
 #ifdef IMGUI_ENABLED
 	ImGuiBeginRender();
 #endif
-	//// first pass
-	//glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-	//glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-	//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // we're not using the stencil buffer now
-	//glEnable(GL_DEPTH_TEST);
-	//DrawScene();
 
-
-	glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
-	glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glEnable(GL_DEPTH_TEST);
+	glViewport(0, 0, 1024, 1024);
+	glBindFramebuffer(GL_FRAMEBUFFER, m_depthMapFBO);
+	glClear(GL_DEPTH_BUFFER_BIT);
 
 	shaderProgram1.Use();
 	glBindVertexArray(m_VAO);
 	glBindVertexBuffer(0, m_VBO, 0, sizeof(GX::VertexP));
 	glBindVertexBuffer(1, m_offsetVBO, 0, sizeof(glm::vec3));
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_EBO);
+
+	glUniformMatrix4fv(0, 1, GL_FALSE, &glm::mat4(m_lightViewMat * m_modelMat)[0][0]);
+	glUniformMatrix4fv(1, 1, GL_FALSE, &m_lightProjMat[0][0]);
+
+	glDrawElementsInstanced(GL_TRIANGLES, 36, GL_UNSIGNED_BYTE, 0, 10000);
+
+	glViewport(0, 0, 1600, 900);
+	glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
+	glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	glUniformMatrix4fv(0, 1, GL_FALSE, &glm::mat4(m_camera.GetViewMatrix() * m_modelMat)[0][0]);
 	glUniformMatrix4fv(1, 1, GL_FALSE, &m_camera.GetProjMatrix()[0][0]);
@@ -160,9 +219,10 @@ void World::Render()
 	glClear(GL_COLOR_BUFFER_BIT);
 
 	screenShader.Use();
-	glBindVertexArray(quadVAO);
+	glBindVertexArray(m_screenVAO);
+	glBindVertexBuffer(0, m_screenVBO, 0, 4 * sizeof(float));
 	glDisable(GL_DEPTH_TEST);
-	glBindTexture(GL_TEXTURE_2D, textureColorbuffer);
+	glBindTexture(GL_TEXTURE_2D, m_shadowTex);
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 
 #ifdef IMGUI_ENABLED
